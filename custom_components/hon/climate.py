@@ -56,7 +56,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher   import async_dispatcher_connect
-from homeassistant.helpers.event        import async_track_time_interval
+from homeassistant.helpers.event        import async_call_later
 from homeassistant.helpers              import config_validation as cv, entity_platform
 from .const import(
     DOMAIN, 
@@ -174,7 +174,7 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
         self._name          = appliance.get('nickName', appliance.get('modelName', 'Climate'))
         self._connectivity  = appliance['connectivity']
         self._model         = appliance['modelName']
-        self._series        = appliance['series']
+        self._series        = appliance.get('series', '')
         self._modelId       = appliance['applianceModelId']
         self._type_name     = appliance['applianceTypeName']
         self._serialNumber  = appliance['serialNumber']
@@ -202,11 +202,11 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
 
         self._attr_target_temperature_step  = PRECISION_WHOLE
         if isinstance(temp_range.step, float):
-            self._att_target_temperature_step = temp_range.step
+            self._attr_target_temperature_step = temp_range.step
     
         if isinstance(temp_range, HonParameterRange):
-            self._att_min_temp  = temp_range.min
-            self._att_max_temp  = temp_range.max
+            self._attr_min_temp  = temp_range.min
+            self._attr_max_temp  = temp_range.max
         
         # Set Fan mode
         self._hon_fan_modes = parameters.get('windSpeed').values
@@ -257,7 +257,9 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
         await self._device.settings_command(parameters).send()
 
     def start_watcher(self, timedelta=timedelta(seconds=8)):
-        self._watcher = async_track_time_interval(self._hass, self.async_update_after_state_change, timedelta)
+        if self._watcher is not None:
+            self._watcher()
+        self._watcher = async_call_later(self._hass, timedelta, self.async_update_after_state_change)
         self.async_write_ha_state()
 
     async def async_update_after_state_change(self, now: Optional[datetime] = None) -> None:
@@ -269,6 +271,7 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
         # Watcher is running, update is not allowed because the data may not be yet accurate
         if self._watcher != None:
             return
+
 
         self._attr_target_temperature   = int(float(self._device.get('tempSel')))
         self._attr_current_temperature  = float(self._device.get('tempIndoor'))
@@ -349,6 +352,8 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is None:
             return False
         await self._device.settings_command({'tempSel': temperature}).send()
+        self._attr_target_temperature = int(float(temperature))
+        self.start_watcher()
 
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -385,6 +390,7 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
     async def async_set_fan_mode(self, fan_mode: str):
         self._attr_fan_mode = fan_mode
         await self._device.settings_command({'windSpeed':CLIMATE_FAN_MODE.get(fan_mode, CLIMATE_FAN_MODE.get(FAN_MEDIUM))}).send()
+        self.start_watcher()
 
 
     async def async_set_swing_mode(self, swing_mode: str):
@@ -413,10 +419,12 @@ class HonClimateEntity(CoordinatorEntity, ClimateEntity):
 
         self._attr_swing_mode = swing_mode
         await self._device.settings_command(parameters).send()
+        self.start_watcher()
 
 
     async def async_will_remove_from_hass(self):
         """When entity will be removed from hass."""
-        if self._watcher != None:
+        if self._watcher is not None:
+            self._watcher()
             self._watcher = None
 

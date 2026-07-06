@@ -74,10 +74,20 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
             appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempSelZ1",   "Selected temperature zone 1")])
         if device.has("tempSelZ2"):
             appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempSelZ2",   "Selected temperature zone 2")])
+        if device.has("tempSelZ3"):
+            appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempSelZ3",   "Selected temperature zone 3")])
         if device.has("tempZ1"):
             appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempZ1",      "Temperature zone 1")])
         if device.has("tempZ2"):
             appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempZ2",      "Temperature zone 2")])
+        if device.has("tempZ3"):
+            appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempZ3",      "Temperature zone 3")])
+
+        # AW Domestic hot water sensors
+        if device.has("tempDhw"):
+            appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempDhw",      "Temperature domestic hot water")])
+        if device.has("tempSelDhw"):
+            appliances.extend([HonBaseTemperature(hass, coordinator, entry, appliance, "tempSelDhw",   "Selected temperature domestic hot water")])
 
         if device.has("remainingTimeMM"):
             appliances.extend([HonBaseStart(hass, coordinator, entry, appliance)])
@@ -157,6 +167,44 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
         if device.has("sterilizationStatus"):
             appliances.extend([HonBaseInt(hass, coordinator, entry, appliance, "sterilizationStatus", "Sterilization status", )])
 
+        # WH (Water Heater) additional sensors
+        if device.has("power"):
+            appliances.extend([HonBasePower(hass, coordinator, entry, appliance)])
+        if device.has("remainingVolumeHotWater"):
+            appliances.extend([HonBaseInt(hass, coordinator, entry, appliance, "remainingVolumeHotWater", "Remaining hot water")])
+        if device.has("totalWorkTime"):
+            appliances.extend([HonBaseWorkTime(hass, coordinator, entry, appliance)])
+
+        # WM additional sensors
+        if device.has("currentWashCycle"):
+            appliances.extend([HonBaseCurrentWashCycle(hass, coordinator, entry, appliance)])
+        if device.has("remainingRinseIterations"):
+            appliances.extend([HonBaseInt(hass, coordinator, entry, appliance, "remainingRinseIterations", "Remaining rinse iterations")])
+        if device.has("detergentPercent"):
+            appliances.extend([HonBaseDetergentPercent(hass, coordinator, entry, appliance)])
+        if device.has("haier_DetergentWeight"):
+            appliances.extend([HonBaseDetergentWeight(hass, coordinator, entry, appliance, "haier_DetergentWeight", "Detergent weight")])
+        if device.has("haier_SoftenerWeight"):
+            appliances.extend([HonBaseDetergentWeight(hass, coordinator, entry, appliance, "haier_SoftenerWeight", "Softener weight")])
+        if device.has("weight") and not device.has("actualWeight"):
+            appliances.extend([HonBaseWeight(hass, coordinator, entry, appliance)])
+
+        # DW additional sensors
+        if device.has("waterHard"):
+            appliances.extend([HonBaseWaterHardness(hass, coordinator, entry, appliance)])
+        if device.has("delayTime"):
+            appliances.extend([HonBaseDelayTime(hass, coordinator, entry, appliance)])
+
+        # TV sensors
+        if device.has("volume"):
+            appliances.extend([HonBaseVolume(hass, coordinator, entry, appliance)])
+        if device.has("displayedApp"):
+            appliances.extend([HonBaseDisplayedApp(hass, coordinator, entry, appliance)])
+
+        # Statistics sensors
+        if device.get("statistics.programsCounter") is not None:
+            appliances.extend([HonBaseProgramsCounter(hass, coordinator, entry, appliance)])
+
         await coordinator.async_request_refresh()
 
     async_add_entities(appliances)
@@ -184,7 +232,15 @@ class HonBaseMode(HonBaseSensorEntity):
 
         if( self._type_id == APPLIANCE_TYPE.PURIFIER ):
             self.translation_key    = "purifier_mode"
-            
+
+        if( self._type_id == APPLIANCE_TYPE.AIR_TO_WATER ):
+            self.translation_key    = "air_to_water_mode"
+            self._attr_icon         = "mdi:heat-pump-outline"
+
+        if( self._type_id == APPLIANCE_TYPE.WATER_HEATER ):
+            self.translation_key    = "water_heater_mode"
+            self._attr_icon         = "mdi:water-boiler"
+
 
     def coordinator_update(self):
         mode = self._device.get("machMode")
@@ -199,7 +255,6 @@ class HonBaseProgramName(HonBaseSensorEntity):
         self._attr_icon = "mdi:playlist-play"
 
     def coordinator_update(self):
-        # Debug için tüm attributes'ı logla
         _LOGGER.debug(f"[{self._name}] All attributes: {self._device.attributes}")
         
         program_name = self._device.getProgramName()
@@ -614,3 +669,122 @@ class HonBaseSpinSpeed(HonBaseSensorEntity):
         if( self._type_id == APPLIANCE_TYPE.WASHING_MACHINE ):
             if self._device.get("machMode") in ("1","6"):
                 self._attr_native_value = 0
+
+
+class HonBaseVolume(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "volume", "Volume")
+
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:volume-high"
+        self._attr_native_unit_of_measurement = PERCENTAGE
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("volume")
+
+
+class HonBaseDisplayedApp(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "displayedApp", "Displayed app")
+
+        self._attr_icon = "mdi:application"
+
+    def coordinator_update(self):
+        app = self._device.get("displayedApp")
+        self._attr_native_value = f"{app}"
+
+
+class HonBaseProgramsCounter(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "statistics.programsCounter", "Total programs")
+
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_icon = "mdi:counter"
+
+    def coordinator_update(self):
+        value = self._device.get("statistics.programsCounter")
+        if value is not None:
+            self._attr_native_value = int(value)
+
+
+class HonBaseCurrentWashCycle(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "currentWashCycle", "Current wash cycle")
+
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_icon = "mdi:counter"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("currentWashCycle")
+
+
+class HonBaseDetergentPercent(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "detergentPercent", "Detergent level")
+
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:bottle-tonic"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("detergentPercent")
+
+
+class HonBaseDetergentWeight(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance, key, name) -> None:
+        super().__init__(coordinator, appliance, key, name)
+
+        self._attr_native_unit_of_measurement = UnitOfMass.GRAMS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:bottle-tonic"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getFloat(self._key)
+
+
+class HonBaseWaterHardness(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "waterHard", "Water hardness")
+
+        self._attr_icon = "mdi:water-opacity"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("waterHard")
+
+
+class HonBaseDelayTime(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "delayTime", "Delay time")
+
+        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
+        self._attr_device_class = SensorDeviceClass.DURATION
+        self._attr_icon = "mdi:timer-sand"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("delayTime")
+
+
+class HonBasePower(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "power", "Power")
+
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:lightning-bolt"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("power")
+
+
+class HonBaseWorkTime(HonBaseSensorEntity):
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "totalWorkTime", "Total work time")
+
+        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
+        self._attr_device_class = SensorDeviceClass.DURATION
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_icon = "mdi:timer-cog"
+
+    def coordinator_update(self):
+        self._attr_native_value = self._device.getInt("totalWorkTime")
